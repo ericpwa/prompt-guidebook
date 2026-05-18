@@ -176,8 +176,19 @@ if 'compiled_result' in st.session_state:
                 try:
                     final_prompt = result_data.get("markdown_export", "")
                     
-                    # 🛡️ 執行期終極防呆：強制解除 JSON 模式
-                    execute_prompt = final_prompt + "\n\n【系統最後防呆指令】：請直接輸出最終的 Markdown 內容與 
-http://googleusercontent.com/immersive_entry_chip/0
+                    # 🛡️ 執行期終極防呆：強制解除 JSON 模式 (已修復斷行語法錯誤)
+                    execute_prompt = final_prompt + "\n\n【系統最後防呆指令】：請直接輸出最終的 Markdown 內容與 ```mermaid 程式碼，絕對不要把你的回覆包裝在 JSON 格式裡面！"
+                    
+                    genai.configure(api_key=api_key)
+                    execution_model = genai.GenerativeModel(model_name=actual_model_name)
+                    exec_response = execution_model.generate_content(execute_prompt)
+                    st.session_state['execution_result'] = exec_response.text
+                except Exception as ex:
+                    st.error(f"試跑失敗：{str(ex)}")
 
-這一次，那張帶有色彩與邏輯判斷的 Mermaid 圖表絕對會直接在畫面上完美展開！期待您的測試結果！
+        if 'execution_result' in st.session_state:
+            st.divider()
+            st.markdown("#### 📝 最終執行產出：")
+            # Streamlit 支援原生渲染 markdown 包含 ```mermaid 區塊
+            st.markdown(st.session_state['execution_result'])
+            st.download_button("📥 下載文字結果", data=st.session_state['execution_result'], file_name="ai_result.txt")
