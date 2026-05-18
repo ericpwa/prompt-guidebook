@@ -36,19 +36,23 @@ with st.sidebar:
 META_PROMPT = """
 # Role & Persona (角色與人設)
 你是《咒語魔法書 Prompt Guidebook》的核心編譯引擎。你是一個「雙面人格」的頂尖提示詞大師：
-1. 【火烤大師】：風格像單口喜劇演員，擅長用幽默、辛辣、荒謬誇飾的比喻，精準吐槽原始提示詞的缺陷與可能導致的 AI 災難。
-2. 【特教老師】：吐槽完後，會立刻變回溫暖包容、充滿愛心耐心的導師，用白話文解釋「為什麼這樣改會更好」，並給予實用的觀念指導。（注意：語氣要像對待成年學生的溫柔引導，不可使用疊字或幼兒化的語氣）。
+1. 【火烤大師】：精準吐槽原始提示詞的缺陷與可能導致的 AI 災難（絕對禁止人身攻擊）。
+2. 【特教老師】：吐槽完後，用白話文解釋「為什麼這樣改會更好」，並給予實用的觀念指導。
 
-# Constraints & Rules (絕對邊界與規則) - ⚠️ 極度重要
-1. 火烤邊界限制：只能吐槽「提示詞本身的結構、邏輯或語意模糊」，絕對禁止人身攻擊、貶低使用者的智商或職業。
-2. 必須嚴格遵循【七大核心 + 兩項動態彈性】的次世代提示詞結構來重組優化版本的指令。
+# 🧠 Dynamic Visual Judgment (動態視覺判定雙層網) - ⚠️ 極度重要
+仔細分析使用者傳入的【使用者期望的視覺呈現】與【原始需求】：
+- 第一層攔截：若使用者明確指定了「表格」或「流程圖/心智圖」，你必須在優化後的 `Output_Format` 中，嚴格規定 AI 必須產出該格式。若指定為圖表，強制要求 AI 產出「無語法錯誤、結構嚴謹且專業的 Mermaid.js 程式碼區塊 (必須用 ```mermaid 包覆)」。
+- 第二層攔截：若使用者選擇「純文字」，但你判定該任務（如 SOP、策略企劃、時間排程）高度適合視覺化，你必須【主動】在 `Output_Format` 中加入 Mermaid 流程圖或表格的強制指令，並在診斷報告中由「特教老師」向使用者說明：「針對這類任務，我已經主動幫你加入了圖表產出指令，效果會更好喔！」
+
+# Constraints & Rules (絕對邊界與規則)
+必須嚴格遵循次世代提示詞結構來重組優化版本的指令。
 
 # Output Format (強制 JSON 輸出格式)
 請嚴格依照以下 JSON Schema 輸出，不要輸出任何 Markdown 標記，只要純 JSON 字串：
 {
   "optimized_prompt": {
     "Role": "...", "Context": "...", "Task": "...", "Success_Criteria": "...", 
-    "Output_Format": "...", "Constraints": "...", "Tone": "...", 
+    "Output_Format": "具體格式要求（此處為控制視覺圖表產出的核心）", "Constraints": "...", "Tone": "...", 
     "Examples": "...", "Steps": "..."
   },
   "diagnostics": [{"roast": "...", "guide": "..."}],
@@ -59,12 +63,23 @@ META_PROMPT = """
 """
 
 # ==========================================
-# 4. 主畫面：使用者輸入區
+# 4. 主畫面：使用者輸入區與【讀心按鈕】
 # ==========================================
 st.subheader("📝 輸入你的原始指令")
 original_prompt = st.text_area(
     "請隨意輸入你的需求（支援片段式關鍵字或白話文），魔法書會自動幫你轉譯：",
     height=150, placeholder="例如：我來不及交報告，幫我寫一封文情並茂的信。"
+)
+
+# 💡 第一層攔截網：UI 意圖收斂器 (降低預期，完美產出)
+visual_choice = st.radio(
+    "🎯 期望的最終視覺呈現",
+    options=[
+        "📝 純文字排版 (預設)",
+        "📊 結構化表格 (適合比較、數據)",
+        "🗺️ 簡易 流程圖/心智圖 (Mermaid 視覺圖表)"
+    ],
+    horizontal=True
 )
 
 # ==========================================
@@ -76,9 +91,11 @@ if st.button("✨ 一鍵編譯與優化", type="primary"):
     elif not original_prompt:
         st.warning("請輸入原始指令！")
     else:
-        # 重置試跑結果
         if 'execution_result' in st.session_state:
             del st.session_state['execution_result']
+            
+        # 將 UI 選擇與使用者輸入合併打包給大腦
+        combined_prompt = f"【使用者原始需求】\n{original_prompt}\n\n【使用者期望的視覺呈現】\n{visual_choice}"
             
         display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].strip()
         with st.spinner(f"魔法書編譯中（使用引擎：{display_engine_name}），請稍候..."):
@@ -86,7 +103,9 @@ if st.button("✨ 一鍵編譯與優化", type="primary"):
                 genai.configure(api_key=api_key)
                 generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
                 model = genai.GenerativeModel(model_name=actual_model_name, system_instruction=META_PROMPT, generation_config=generation_config)
-                response = model.generate_content(original_prompt)
+                
+                # 傳送複合指令
+                response = model.generate_content(combined_prompt)
                 
                 raw_text = response.text.strip()
                 start_idx, end_idx = raw_text.find('{'), raw_text.rfind('}')
@@ -100,20 +119,22 @@ if st.button("✨ 一鍵編譯與優化", type="primary"):
                 st.balloons()
             except Exception as e:
                 error_msg = str(e).lower()
-                if "quota" in error_msg: st.error("🛑 當日免費額度已用盡！")
-                elif "429" in error_msg: st.warning("⏳ 點擊太快囉！請等 1 分鐘。")
-                elif "api_key" in error_msg: st.error("🔑 API Key 無效！")
+                if "quota" in error_msg: st.error("🛑 當日免費額度已用盡！請明天再來，或更換 API Key。")
+                elif "429" in error_msg: st.warning("⏳ 點擊太快囉！Google API 每分鐘限 15 次，請稍等 1 分鐘。")
+                elif "404" in error_msg: st.error("🚫 模型暫不可用！請從左側選單切換另一個模型再試。")
+                elif "503" in error_msg: st.warning("🐌 Google 伺服器塞車中！請稍候片刻再試。")
+                elif "api_key" in error_msg or "400" in error_msg: st.error("🔑 API Key 無效！請檢查輸入是否正確。")
+                elif "json_error" in error_msg or "expecting value" in error_msg: st.error("🧩 AI 回傳格式異常！請直接再點擊一次按鈕。")
                 else: st.error(f"⚠️ 發生未知錯誤：{str(e)}")
 
 # ==========================================
-# 6. UI 頁籤渲染 (💡 升級：新增第 6 個試跑 Tab)
+# 6. UI 頁籤渲染 (包含一鍵試跑)
 # ==========================================
 if 'compiled_result' in st.session_state:
     result_data = st.session_state['compiled_result']
     
     tabs = st.tabs(["✨ 優化後 Prompt", "🧪 診斷報告", "📊 分數卡", "📝 修改摘要", "📦 Markdown 匯出", "🚀 一鍵試跑結果"])
 
-    # [頁籤 1] 結構化拆解
     with tabs[0]:
         st.markdown("### 結構化拆解")
         opt_data = result_data.get("optimized_prompt", {})
@@ -122,7 +143,6 @@ if 'compiled_result' in st.session_state:
             if value and value != "null":
                 st.markdown(f"**【{key_mapping.get(key, key)}】**\n> {value}")
 
-    # [頁籤 2] 診斷報告
     with tabs[1]:
         st.markdown("### 惡魔與特教老師的指導")
         for i, diag in enumerate(result_data.get("diagnostics", []), 1):
@@ -130,42 +150,36 @@ if 'compiled_result' in st.session_state:
                 st.markdown(f"**{diag.get('roast', '')}**")
                 st.markdown(f"*{diag.get('guide', '')}*")
 
-    # [頁籤 3] 分數卡
     with tabs[2]:
         score = result_data.get("scorecard", {}).get("score", 0)
         st.metric(label="原指令分數", value=f"{score} / 100")
         st.progress(score / 100)
         st.info(result_data.get("scorecard", {}).get("evaluation", ""))
 
-    # [頁籤 4] 修改摘要
     with tabs[3]:
         st.write(result_data.get("summary", ""))
 
-    # [頁籤 5] Markdown 匯出
     with tabs[4]:
         st.code(result_data.get("markdown_export", ""), language="markdown")
 
-    # [💡 頁籤 6] 🚀 一鍵試跑結果 (Direction 2 新功能)
     with tabs[5]:
         st.markdown("### 🏃 即刻驗證編譯效果")
-        st.info("點擊下方按鈕，系統將直接拿這段「優化後的指令」去執行最終任務。")
+        st.info("點擊下方按鈕，系統將直接拿這段「優化後的指令」去執行最終任務（支援動態渲染 Mermaid 流程圖！）。")
         
-        # 執行按鈕
         if st.button("🚀 立即執行優化後的指令", type="secondary"):
             with st.spinner("AI 正在根據優化後的指令生成結果，請稍候..."):
                 try:
                     final_prompt = result_data.get("markdown_export", "")
                     genai.configure(api_key=api_key)
-                    # 試跑不使用 JSON Mode，使用一般對話模式
                     execution_model = genai.GenerativeModel(model_name=actual_model_name)
                     exec_response = execution_model.generate_content(final_prompt)
                     st.session_state['execution_result'] = exec_response.text
                 except Exception as ex:
                     st.error(f"試跑失敗：{str(ex)}")
 
-        # 顯示試跑結果
         if 'execution_result' in st.session_state:
             st.divider()
             st.markdown("#### 📝 最終執行產出：")
+            # Streamlit 支援原生渲染 markdown 包含 ```mermaid 區塊
             st.markdown(st.session_state['execution_result'])
-            st.download_button("📥 下載執行結果", data=st.session_state['execution_result'], file_name="ai_result.txt")
+            st.download_button("📥 下載文字結果", data=st.session_state['execution_result'], file_name="ai_result.txt")
