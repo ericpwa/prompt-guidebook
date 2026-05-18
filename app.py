@@ -75,7 +75,7 @@ original_prompt = st.text_area(
 visual_choice = st.radio(
     "🎯 期望的最終視覺呈現",
     options=[
-        "📝 純文字排版 (預設)",
+        "📝 結構化提示詞版型 (預設)",
         "📊 簡易 結構化表格 (適合比較、數據)",
         "🗺️ 簡易 流程圖/心智圖 (Mermaid 視覺圖表)"
     ],
