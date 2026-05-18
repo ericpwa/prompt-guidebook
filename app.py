@@ -10,13 +10,24 @@ st.title("✨ 咒語魔法書 Prompt Guidebook")
 st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的AI指令提示詞。")
 
 # ==========================================
-# 2. 側邊欄：API Key 設定與【菁英模型雷達】
+# 2. 側邊欄：API Key 設定、草履蟲指南與【菁英模型雷達】
 # ==========================================
 with st.sidebar:
     st.header("⚙️ 魔法書後端設定")
-    # 💡 趣味文案：將 API Key 包裝成魔力來源
+    
     api_key = st.text_input("🔑 輸入你的魔力來源 (Google Gemini API Key)", type="password")
-    st.markdown("[取得免費 API Key (Google AI Studio)](https://aistudio.google.com/app/apikey)")
+    st.markdown("[👉 點我前往取得免費 API Key (Google AI Studio)](https://aistudio.google.com/app/apikey)")
+    
+    # 💡 終極防呆：草履蟲專屬指南，利用 AIza 特徵碼降低焦慮
+    with st.expander("🦠 草履蟲指南：取得魔力來源"):
+        st.markdown("""
+        **只要 30 秒，超無腦 5 步驟：**
+        1. 點擊上方的 **「👉 點我前往...」** 連結。
+        2. 勾選同意條款，並用你的 **Google 帳號登入**。
+        3. 在畫面左上方，點擊藍色大按鈕 **「Get API key」**。
+        4. 點擊 **「Create API key」** (系統會自動幫你建專案)。
+        5. **複製**畫面上出現的那串 `AIza...` 開頭的長長亂碼，貼回左側的「魔力來源」框框中，大功告成！
+        """)
     
     st.divider()
     st.subheader("📡 模型雷達 (Model Radar)")
@@ -109,7 +120,7 @@ visual_choice = st.radio(
     "🎯 期望的最終視覺呈現",
     options=[
         "📝 結構化提示詞版型 (預設)",
-        "📊 簡易 結構化表格 (適合對照比較、數據)",
+        "📊 簡易 結構化表格 (適合比較、數據)",
         "🗺️ 簡易 流程圖/心智圖 (Mermaid 視覺圖表)"
     ],
     horizontal=True
@@ -118,8 +129,7 @@ visual_choice = st.radio(
 # ==========================================
 # 6. 編譯引擎執行邏輯
 # ==========================================
-# 💡 趣味文案：增加詠唱的儀式感
-if st.button("✨ 施咒轉譯！一鍵編譯與優化", type="primary"):
+if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
     if not api_key:
         st.error("請先在左側邊欄輸入 API Key（注入魔力）！")
     elif not original_prompt:
@@ -131,7 +141,7 @@ if st.button("✨ 施咒轉譯！一鍵編譯與優化", type="primary"):
         combined_prompt = f"【使用者原始需求】\n{original_prompt}\n\n【使用者期望的視覺呈現】\n{visual_choice}"
             
         display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].strip()
-        with st.spinner(f"魔法書正在施咒轉譯中（使用引擎：{display_engine_name}），請稍候..."):
+        with st.spinner(f"魔法書正在詠唱轉譯中（使用引擎：{display_engine_name}），請稍候..."):
             try:
                 genai.configure(api_key=api_key)
                 generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
@@ -165,8 +175,7 @@ if st.button("✨ 施咒轉譯！一鍵編譯與優化", type="primary"):
 if 'compiled_result' in st.session_state:
     result_data = st.session_state['compiled_result']
     
-    # 💡 趣味文案：頁籤全面魔法化
-    tabs = st.tabs(["✨ 究極咒語 (優化後)", "🧪 天使與惡魔的低語", "📊 戰鬥力分數卡", "📝 施法日誌", "📦 打包帶走", "🚀 真實召喚結果"])
+    tabs = st.tabs(["✨ 究極咒語 (優化後)", "🧪 天使與惡魔的低語", "📊 戰鬥力分數卡", "📝 施法日誌", "📦 無腦打包區", "🚀 真實召喚結果"])
 
     with tabs[0]:
         st.markdown("### 結構化拆解")
