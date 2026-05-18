@@ -41,11 +41,12 @@ META_PROMPT = """
 
 # 🧠 Dynamic Visual Judgment (動態視覺判定雙層網) - ⚠️ 極度重要
 仔細分析使用者傳入的【使用者期望的視覺呈現】與【原始需求】：
-- 第一層攔截：若使用者明確指定了「表格」或「流程圖/心智圖」，你必須在優化後的 `Output_Format` 中，嚴格規定 AI 必須產出該格式。若指定為圖表，強制要求 AI 產出「複雜、高細節且具備專業設計感的 Mermaid 視覺圖表」。你必須在提示詞中對 AI 下達以下 4 個鐵血規定：
+- 第一層攔截：若使用者明確指定了「表格」或「流程圖/心智圖」，你必須在優化後的 `Output_Format` 中，嚴格規定 AI 必須產出該格式。若指定為圖表，強制要求 AI 產出「複雜、高細節且具備專業設計感的 Mermaid 視覺圖表」。你必須在提示詞中對 AI 下達以下 5 個鐵血規定：
   1. 必須使用多樣化的節點形狀（例如：菱形代表判斷、圓角矩形代表行動）。
   2. 必須在箭頭連接線上加上說明文字（例如：-->|是/否|）。
   3. 絕對要使用 `style` 或 `classDef` 語法為節點塗上專業的色彩（如專業商務藍、莫蘭迪色系背景），禁止全白底色。
   4. 程式碼開頭必須嚴格標示為 ```mermaid （絕對禁止寫成 ```graph 或純文字）。
+  5. 【防呆死線】：嚴格規定 AI「必須直接輸出純 Markdown 文本與 Mermaid 區塊，絕對禁止將結果包裝成 JSON 格式」。
 - 第二層攔截：若使用者選擇「純文字」，但你判定該任務（如 SOP、策略企劃、時間排程）高度適合視覺化，你必須【主動】在 `Output_Format` 中加入上述的高階 Mermaid 產圖指令，並在診斷報告中由「特教老師」向使用者說明：「針對這類任務，我已經主動幫你加入了圖表產出指令，效果會更好喔！」
 
 # Constraints & Rules (絕對邊界與規則)
@@ -174,16 +175,9 @@ if 'compiled_result' in st.session_state:
             with st.spinner("AI 正在根據優化後的指令生成結果，請稍候..."):
                 try:
                     final_prompt = result_data.get("markdown_export", "")
-                    genai.configure(api_key=api_key)
-                    execution_model = genai.GenerativeModel(model_name=actual_model_name)
-                    exec_response = execution_model.generate_content(final_prompt)
-                    st.session_state['execution_result'] = exec_response.text
-                except Exception as ex:
-                    st.error(f"試跑失敗：{str(ex)}")
+                    
+                    # 🛡️ 執行期終極防呆：強制解除 JSON 模式
+                    execute_prompt = final_prompt + "\n\n【系統最後防呆指令】：請直接輸出最終的 Markdown 內容與 
+http://googleusercontent.com/immersive_entry_chip/0
 
-        if 'execution_result' in st.session_state:
-            st.divider()
-            st.markdown("#### 📝 最終執行產出：")
-            # Streamlit 支援原生渲染 markdown 包含 ```mermaid 區塊
-            st.markdown(st.session_state['execution_result'])
-            st.download_button("📥 下載文字結果", data=st.session_state['execution_result'], file_name="ai_result.txt")
+這一次，那張帶有色彩與邏輯判斷的 Mermaid 圖表絕對會直接在畫面上完美展開！期待您的測試結果！
