@@ -1,12 +1,12 @@
-﻿import streamlit as st
+import streamlit as st
 import google.generativeai as genai
 import json
 
 # ==========================================
-# 1. 頁面與基本設定
+# 1. 頁面與基本設定 (💡 優化：全面替換高相容性、專業感 Icon)
 # ==========================================
-st.set_page_config(page_title="咒語魔法書 Prompt Guidebook", page_icon="🪄", layout="wide")
-st.title("🪄 咒語魔法書 Prompt Guidebook")
+st.set_page_config(page_title="咒語魔法書 Prompt Guidebook", page_icon="✨", layout="wide")
+st.title("✨ 咒語魔法書 Prompt Guidebook")
 st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的AI指令提示詞。")
 
 # ==========================================
@@ -20,7 +20,7 @@ with st.sidebar:
     st.divider()
     st.subheader("📡 模型雷達 (Model Radar)")
     
-    # 穩定性修正：絕對路徑路由，確保符合 API 權限
+    # 穩定性修正：絕對路徑路由
     MODEL_RADAR = {
         "Gemini 2.5 Flash 🥇 推薦：最新極速運算、邏輯編譯首選": "models/gemini-2.5-flash",
         "Gemini 2.0 Flash (經典穩定版)：高性價比、穩健輸出": "models/gemini-2.0-flash",
@@ -28,14 +28,12 @@ with st.sidebar:
         "Gemini Flash Latest (最新滾動版)：動態更新端點": "models/gemini-flash-latest"
     }
     
-    # 渲染下拉選單
     model_choice_label = st.selectbox(
         "選擇 AI 編譯引擎",
         options=list(MODEL_RADAR.keys()),
-        index=0  # 預設選中 2.5 Flash
+        index=0
     )
     
-    # 取得對應的實際 API 模型絕對路徑
     actual_model_name = MODEL_RADAR[model_choice_label]
 
 # ==========================================
@@ -117,7 +115,6 @@ if st.button("✨ 一鍵編譯與優化", type="primary"):
 
                 response = model.generate_content(original_prompt)
                 
-                # 防彈機制：JSON 字串清理
                 raw_text = response.text.strip()
                 start_idx = raw_text.find('{')
                 end_idx = raw_text.rfind('}')
@@ -130,20 +127,26 @@ if st.button("✨ 一鍵編譯與優化", type="primary"):
                 result_data = json.loads(clean_json_str)
                 st.session_state['compiled_result'] = result_data
                 
-                # 🎈 UX 優化：成功後飄出慶祝氣球！
                 st.success("編譯完成！請查看下方各頁籤的報告。")
                 st.balloons()
                 
             except Exception as e:
-                error_msg = str(e)
-                if "429" in error_msg:
-                    st.warning("⏳ **點擊太快囉！** Google API 免費版每分鐘有 15 次的呼叫限制。請喝口水，**稍等 1 分鐘後再點擊一次**。")
+                error_msg = str(e).lower()
+                # 💡 優化：升級為 6 種情境的商用級錯誤攔截器
+                if "quota" in error_msg:
+                    st.error("🛑 **當日免費額度已用盡！** 您的 Google API Key 今日免費扣打已達上限。請明天再來，或更換另一把 API Key。")
+                elif "429" in error_msg:
+                    st.warning("⏳ **系統冷卻中！** 短時間內請求太頻繁（Google API 每分鐘限 15 次）。請喝口水，**稍等 1 分鐘後再點擊一次**。")
                 elif "404" in error_msg:
-                    st.error("🚫 **模型暫不可用！** 您選擇的 AI 模型端點目前被 Google 關閉或您的 API Key 無法存取。請從左側選單**切換另一個模型**再試一次。")
-                elif "JSON_ERROR" in error_msg or "Expecting value" in error_msg:
-                    st.error("🧩 **AI 回傳格式異常！** 模型這次太有創意，忘記遵守 JSON 格式了。這偶爾會發生，請**直接再點擊一次按鈕**重新編譯即可。")
+                    st.error("🚫 **模型暫不可用！** 您選擇的 AI 模型端點目前無法存取。請從左側選單**切換另一個模型**再試一次。")
+                elif "503" in error_msg:
+                    st.warning("🐌 **Google 伺服器塞車中！** 目前 AI 引擎處於高負載狀態，請稍候片刻再重新點擊。")
+                elif "api_key" in error_msg or "400" in error_msg:
+                    st.error("🔑 **API Key 無效！** 請檢查您在左側輸入的 Google Gemini API Key 是否正確或包含空白字元。")
+                elif "json_error" in error_msg or "expecting value" in error_msg:
+                    st.error("🧩 **AI 回傳格式異常！** 模型這次太有創意，忘記遵守 JSON 格式了。請**直接再點擊一次按鈕**重新編譯即可。")
                 else:
-                    st.error(f"⚠️ 發生未知錯誤：{error_msg}")
+                    st.error(f"⚠️ 發生未知錯誤：{str(e)}")
 
 # ==========================================
 # 6. UI 頁籤渲染 (Tab 顯示區)
@@ -152,7 +155,7 @@ if 'compiled_result' in st.session_state:
     result_data = st.session_state['compiled_result']
     
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🪄 優化後 Prompt", 
+        "✨ 優化後 Prompt", 
         "🧪 診斷報告", 
         "📊 分數卡", 
         "📝 修改摘要", 
