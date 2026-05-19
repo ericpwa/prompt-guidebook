@@ -3,22 +3,76 @@ import google.generativeai as genai
 import json
 
 # ==========================================
-# 1. 頁面與基本設定
+# 0. 系統初始化與 Supabase 連線設定
 # ==========================================
 st.set_page_config(page_title="咒語魔法書 Prompt Guidebook", page_icon="✨", layout="wide")
+
+# 嘗試連線 Supabase (防呆機制：若未設定 Secrets 則顯示警告但不崩潰)
+supabase_connected = False
+try:
+    from supabase import create_client, Client
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase_connected = True
+except Exception as e:
+    pass
+
+# ==========================================
+# 1. 頁面與基本設定
+# ==========================================
 st.title("✨ 咒語魔法書 Prompt Guidebook")
 st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的AI指令提示詞。")
 
 # ==========================================
-# 2. 側邊欄：API Key 設定、草履蟲指南與【菁英模型雷達】
+# 2. 側邊欄：SaaS 會員登入、API Key 與模型設定
 # ==========================================
 with st.sidebar:
+    st.header("👤 法師身份認證 (SaaS 版)")
+    if supabase_connected:
+        if 'user' not in st.session_state:
+            st.info("登入後解鎖「魔法迴廊」，系統將為您自動備份專屬咒語！")
+            email = st.text_input("輸入 Email 獲取魔法驗證碼 (免密碼登入)")
+            
+            if st.button("📧 發送驗證碼", use_container_width=True):
+                if email:
+                    try:
+                        supabase.auth.sign_in_with_otp({"email": email})
+                        st.session_state['otp_sent'] = True
+                        st.session_state['auth_email'] = email
+                        st.success("✨ 驗證碼已發送至信箱！(請留意垃圾信件匣)")
+                    except Exception as e:
+                        st.error(f"發送失敗：{str(e)}")
+                else:
+                    st.warning("請先輸入 Email。")
+
+            if st.session_state.get('otp_sent', False):
+                otp = st.text_input("輸入信件中的 6 位數驗證碼", type="password")
+                if st.button("🔓 驗證並登入", type="primary", use_container_width=True):
+                    try:
+                        res = supabase.auth.verify_otp({"email": st.session_state['auth_email'], "token": otp, "type": "email"})
+                        st.session_state['user'] = res.user
+                        st.success("登入成功！魔法迴廊已開啟。")
+                        st.rerun()
+                    except Exception as e:
+                        st.error("驗證失敗，請檢查驗證碼是否正確或過期。")
+        else:
+            st.success(f"✅ 已登入法師：\n{st.session_state['user'].email}")
+            if st.button("🚪 登出", use_container_width=True):
+                supabase.auth.sign_out()
+                del st.session_state['user']
+                if 'otp_sent' in st.session_state:
+                    del st.session_state['otp_sent']
+                st.rerun()
+    else:
+        st.error("⚠️ 系統偵測不到 Supabase 金鑰，請確認是否已在 Streamlit Secrets 中設定！")
+
+    st.divider()
+
     st.header("⚙️ 魔法書後端設定")
-    
     api_key = st.text_input("🔑 輸入你的魔力來源 (Google Gemini API Key)", type="password")
     st.markdown("[👉 點我前往取得免費 API Key (Google AI Studio)](https://aistudio.google.com/app/apikey)")
     
-    # 💡 終極防呆：草履蟲專屬指南，利用 AIza 特徵碼降低焦慮
     with st.expander("🦠 草履蟲指南：取得魔力來源"):
         st.markdown("""
         **只要 30 秒，超無腦 5 步驟：**
@@ -127,7 +181,7 @@ visual_choice = st.radio(
 )
 
 # ==========================================
-# 6. 編譯引擎執行邏輯
+# 6. 編譯引擎執行邏輯 (加入資料庫寫入機制)
 # ==========================================
 if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
     if not api_key:
@@ -156,7 +210,20 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
                 else:
                     raise ValueError("JSON_ERROR")
 
-                st.session_state['compiled_result'] = json.loads(clean_json_str)
+                compiled_json = json.loads(clean_json_str)
+                st.session_state['compiled_result'] = compiled_json
+                
+                # 🛡️ SaaS 資料庫儲存機制 (僅針對已登入使用者)
+                if supabase_connected and 'user' in st.session_state:
+                    try:
+                        db_payload = {
+                            "user_id": st.session_state['user'].id,
+                            "prompt_data": compiled_json
+                        }
+                        supabase.table("prompt_history").insert(db_payload).execute()
+                    except Exception as db_err:
+                        st.toast(f"⚠️ 雲端備份失敗，但不影響當前結果顯示。({str(db_err)})")
+
                 st.success("✨ 咒語編譯完成！請查看下方各頁籤的報告。")
                 st.balloons()
             except Exception as e:
@@ -170,61 +237,93 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
                 else: st.error(f"⚠️ 發生未知錯誤：{str(e)}")
 
 # ==========================================
-# 7. UI 頁籤渲染 (包含一鍵試跑)
+# 7. UI 頁籤渲染 (新增第 7 個頁籤：魔法迴廊)
 # ==========================================
-if 'compiled_result' in st.session_state:
-    result_data = st.session_state['compiled_result']
+if 'compiled_result' in st.session_state or ('user' in st.session_state):
     
-    tabs = st.tabs(["✨ 究極咒語 (優化後)", "🧪 天使與惡魔的低語", "📊 戰鬥力分數卡", "📝 施法日誌", "📦 無腦打包區", "🚀 真實召喚結果"])
-
-    with tabs[0]:
-        st.markdown("### 結構化拆解")
-        opt_data = result_data.get("optimized_prompt", {})
-        key_mapping = {"Role": "角色與人設", "Context": "背景脈絡", "Task": "核心任務", "Success_Criteria": "驗收標準", "Output_Format": "輸出格式", "Constraints": "絕對邊界", "Tone": "風格與語氣", "Examples": "參考範例", "Steps": "執行步驟"}
-        for key, value in opt_data.items():
-            if value and value != "null":
-                st.markdown(f"**【{key_mapping.get(key, key)}】**\n> {value}")
-
-    with tabs[1]:
-        st.markdown("### 惡魔火烤與特教老師的指導")
-        for i, diag in enumerate(result_data.get("diagnostics", []), 1):
-            with st.expander(f"診斷重點 {i}", expanded=True):
-                st.markdown(f"**{diag.get('roast', '')}**")
-                st.markdown(f"*{diag.get('guide', '')}*")
-
-    with tabs[2]:
-        score = result_data.get("scorecard", {}).get("score", 0)
-        st.metric(label="原指令戰鬥力", value=f"{score} / 100")
-        st.progress(score / 100)
-        st.info(result_data.get("scorecard", {}).get("evaluation", ""))
-
-    with tabs[3]:
-        st.write(result_data.get("summary", ""))
-
-    with tabs[4]:
-        st.code(result_data.get("markdown_export", ""), language="markdown")
-
-    with tabs[5]:
-        st.markdown("### 🏃 即刻驗證召喚效果")
-        st.info("點擊下方按鈕，系統將直接拿這段「究極咒語」去執行最終任務（支援動態渲染 Mermaid 流程圖！）。")
+    # 動態決定 Tabs 數量 (有當次結果才顯示前 6 個 Tabs)
+    if 'compiled_result' in st.session_state:
+        tabs = st.tabs(["✨ 究極咒語", "🧪 惡魔低語", "📊 分數卡", "📝 施法日誌", "📦 無腦打包", "🚀 真實召喚", "🗂️ 我的魔法迴廊"])
+        result_data = st.session_state['compiled_result']
         
-        if st.button("🚀 立即執行究極咒語", type="secondary"):
-            with st.spinner("AI 正在根據咒語召喚結果，請稍候..."):
-                try:
-                    final_prompt = result_data.get("markdown_export", "")
-                    
-                    # 🛡️ 執行期終極防呆 (嚴格單行字串)
-                    execute_prompt = final_prompt + "\n\n【系統最後防呆指令】：請直接輸出最終的 Markdown 內容與 ```mermaid 程式碼，絕對不要把你的回覆包裝在 JSON 格式裡面！"
-                    
-                    genai.configure(api_key=api_key)
-                    execution_model = genai.GenerativeModel(model_name=actual_model_name)
-                    exec_response = execution_model.generate_content(execute_prompt)
-                    st.session_state['execution_result'] = exec_response.text
-                except Exception as ex:
-                    st.error(f"召喚失敗：{str(ex)}")
+        with tabs[0]:
+            st.markdown("### 結構化拆解")
+            opt_data = result_data.get("optimized_prompt", {})
+            key_mapping = {"Role": "角色", "Context": "脈絡", "Task": "任務", "Success_Criteria": "驗收標準", "Output_Format": "輸出格式", "Constraints": "邊界", "Tone": "語氣", "Examples": "範例", "Steps": "步驟"}
+            for key, value in opt_data.items():
+                if value and value != "null":
+                    st.markdown(f"**【{key_mapping.get(key, key)}】**\n> {value}")
 
-        if 'execution_result' in st.session_state:
-            st.divider()
-            st.markdown("#### 📝 最終執行產出：")
-            st.markdown(st.session_state['execution_result'])
-            st.download_button("📥 下載召喚結果", data=st.session_state['execution_result'], file_name="ai_result.txt")
+        with tabs[1]:
+            st.markdown("### 天使與惡魔的指導")
+            for i, diag in enumerate(result_data.get("diagnostics", []), 1):
+                with st.expander(f"診斷重點 {i}", expanded=True):
+                    st.markdown(f"**{diag.get('roast', '')}**")
+                    st.markdown(f"*{diag.get('guide', '')}*")
+
+        with tabs[2]:
+            score = result_data.get("scorecard", {}).get("score", 0)
+            st.metric(label="原指令戰鬥力", value=f"{score} / 100")
+            st.progress(score / 100)
+            st.info(result_data.get("scorecard", {}).get("evaluation", ""))
+
+        with tabs[3]:
+            st.write(result_data.get("summary", ""))
+
+        with tabs[4]:
+            st.code(result_data.get("markdown_export", ""), language="markdown")
+
+        with tabs[5]:
+            st.markdown("### 🏃 即刻驗證召喚效果")
+            if st.button("🚀 立即執行究極咒語", type="secondary"):
+                with st.spinner("AI 正在根據咒語召喚結果，請稍候..."):
+                    try:
+                        final_prompt = result_data.get("markdown_export", "")
+                        execute_prompt = final_prompt + "\n\n【系統防呆】：請直接輸出 Markdown 與 ```mermaid 程式碼，絕對不要包裝在 JSON 裡面！"
+                        genai.configure(api_key=api_key)
+                        execution_model = genai.GenerativeModel(model_name=actual_model_name)
+                        exec_response = execution_model.generate_content(execute_prompt)
+                        st.session_state['execution_result'] = exec_response.text
+                    except Exception as ex:
+                        st.error(f"召喚失敗：{str(ex)}")
+
+            if 'execution_result' in st.session_state:
+                st.divider()
+                st.markdown(st.session_state['execution_result'])
+                
+        # 第 7 頁籤分配給魔法迴廊
+        history_tab = tabs[6]
+    else:
+        # 若無當次結果，只顯示魔法迴廊
+        history_tab = st.tabs(["🗂️ 我的魔法迴廊"])[0]
+
+    # --- 歷史紀錄渲染邏輯 ---
+    with history_tab:
+        st.markdown("### 🗂️ 我的專屬魔法迴廊")
+        st.caption("雲端金庫內建 2 天自動銷毀機制，確保隱私不留痕。")
+        
+        if not supabase_connected:
+            st.warning("系統未連線至資料庫，無法讀取紀錄。")
+        elif 'user' not in st.session_state:
+            st.info("請先於左側面板輸入 Email 登入，即可解鎖您的個人歷史紀錄庫！")
+        else:
+            if st.button("🔄 刷新迴廊"):
+                st.rerun()
+                
+            try:
+                # 由於 RLS 防護，使用者只會 select 到屬於自己的資料
+                history = supabase.table("prompt_history").select("*").order("created_at", desc=True).execute()
+                
+                if not history.data:
+                    st.info("目前迴廊空空如也，快去詠唱你的第一個咒語吧！")
+                else:
+                    for record in history.data:
+                        # 擷取時間與任務名稱作為標題
+                        created_time = record['created_at'][:16].replace('T', ' ')
+                        p_data = record['prompt_data']
+                        task_name = p_data.get('optimized_prompt', {}).get('Task', '未命名任務')
+                        
+                        with st.expander(f"🕰️ {created_time} | {task_name[:30]}...", expanded=False):
+                            st.code(p_data.get('markdown_export', '無匯出資料'), language='markdown')
+            except Exception as e:
+                st.error(f"讀取紀錄失敗：{str(e)}")
