@@ -18,18 +18,6 @@ try:
 except Exception as e:
     pass
 
-# 🧙‍♂️ 最高法師特權：繞過發信熔斷，直接用 BOSS 的 UID 在前端強行成神
-if 'user' not in st.session_state:
-    class MockUser:
-        def __init__(self, uid, email):
-            self.id = uid
-            self.email = email
-    # 填入 BOSS 交付的專屬雲端憑證
-    st.session_state['user'] = MockUser(
-        "d306420c-cc72-44d5-bd37-28790c13f4e8", 
-        "wbp.winner@wbp.com.tw"
-    )
-
 # ==========================================
 # 1. 頁面與基本設定
 # ==========================================
@@ -37,7 +25,7 @@ st.title("✨ 咒語魔法書 Prompt Guidebook")
 st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的AI指令提示詞。")
 
 # ==========================================
-# 2. 側邊欄：SaaS 會員登入、API Key 與模型設定
+# 2. 側邊欄：SaaS 會員登入、API Key 與模型設定 (已移除後門，啟動多用戶隔離)
 # ==========================================
 with st.sidebar:
     st.header("👤 法師身份認證 (SaaS 版)")
@@ -49,28 +37,25 @@ with st.sidebar:
             if st.button("📧 發送驗證碼", use_container_width=True):
                 if email:
                     try:
+                        # 呼罩 Supabase 官方免密碼 OTP 機制
                         supabase.auth.sign_in_with_otp({"email": email})
                         st.session_state['otp_sent'] = True
                         st.session_state['auth_email'] = email
-                        st.success("✨ 驗證碼已發送至信箱！(請留意垃圾信件匣)")
+                        st.success("✨ 驗證信已發送！請點擊信中 [Sign in] 連結或輸入代碼。")
                     except Exception as e:
-                        st.error(f"發送失敗：{str(e)}")
+                        error_msg = str(e).lower()
+                        if "rate limit" in error_msg:
+                            st.error("🛑 施法過於頻繁！系統啟動安全防護，請稍候 15 分鐘再試。")
+                        else:
+                            st.error(f"發送失敗：{str(e)}")
                 else:
                     st.warning("請先輸入 Email。")
 
             if st.session_state.get('otp_sent', False):
-                otp = st.text_input("輸入信件中的 6 位數驗證碼", type="password")
-                if st.button("🔓 驗證並登入", type="primary", use_container_width=True):
-                    try:
-                        res = supabase.auth.verify_otp({"email": st.session_state['auth_email'], "token": otp, "type": "email"})
-                        st.session_state['user'] = res.user
-                        st.success("登入成功！魔法迴廊已開啟。")
-                        st.rerun()
-                    except Exception as e:
-                        st.error("驗證失敗，請檢查驗證碼是否正確或過期。")
+                st.caption("💡 提示：若您的信件內包含 [Sign in] 連結，點擊後網頁將自動完成登入，請直接重新整理本網頁。")
         else:
             st.success(f"✅ 已登入法師：\n{st.session_state['user'].email}")
-            if st.button("🚪 登出特權通道", use_container_width=True):
+            if st.button("🚪 登出帳號", use_container_width=True):
                 if supabase_connected:
                     try:
                         supabase.auth.sign_out()
@@ -229,7 +214,7 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
                 compiled_json = json.loads(clean_json_str)
                 st.session_state['compiled_result'] = compiled_json
                 
-                # 🛡️ SaaS 資料庫儲存機制 (將自動綁定 BOSS 的 UID)
+                # 🛡️ SaaS 資料庫儲存機制 (自動綁定登入法師的 UID)
                 if supabase_connected and 'user' in st.session_state:
                     try:
                         db_payload = {
@@ -258,7 +243,7 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
 if 'compiled_result' in st.session_state or ('user' in st.session_state):
     
     if 'compiled_result' in st.session_state:
-        tabs = st.tabs(["✨ 究極咒語", "🧪 惡魔低語", "📊 分數卡", "📝 施法日誌", "📦 無腦打包", "🚀 真實召喚", "🗂️ 我的魔法迴廊"])
+        tabs = st.tabs(["✨ 究極咒語", "🧪 惡魔低語", "📊 戰鬥力分數卡", "📝 施法日誌", "📦 無腦打包", "🚀 真實召喚", "🗂️ 我的魔法迴廊"])
         result_data = st.session_state['compiled_result']
         
         with tabs[0]:
@@ -318,13 +303,13 @@ if 'compiled_result' in st.session_state or ('user' in st.session_state):
         if not supabase_connected:
             st.warning("系統未連線至資料庫，無法讀取紀錄。")
         elif 'user' not in st.session_state:
-            st.info("請先於左側面板登入，即可解鎖您的個人歷史紀錄庫！")
+            st.info("請先於左側面板輸入 Email 登入，即可解鎖您的個人歷史紀錄庫！")
         else:
             if st.button("🔄 刷新迴廊"):
                 st.rerun()
                 
             try:
-                # 由於 RLS 防護，最高特權通道也只會安全 select 到屬於 BOSS 自己的資料
+                # 國防級 RLS 防護防禦：外部用戶絕對拿不到 BOSS 的資料，各自獨立！
                 history = supabase.table("prompt_history").select("*").order("created_at", desc=True).execute()
                 
                 if not history.data:
