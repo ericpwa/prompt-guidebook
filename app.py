@@ -1,36 +1,39 @@
 import streamlit as st
 import google.generativeai as genai
 import json
+import re
 
 # ==========================================
 # 0. 系統初始化與 Supabase 連線設定
 # ==========================================
-st.set_page_config(page_title="咒語魔法書 Prompt Guidebook", page_icon="✨", layout="wide")
+st.set_page_config(page_title="咒語魔法書 2.0 Prompt Guidebook", page_icon="✨", layout="wide")
 
 supabase_connected = False
 try:
     from supabase import create_client, Client
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    supabase_connected = True
-except Exception as e:
-    pass
+    SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+    SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+    if SUPABASE_URL and SUPABASE_KEY:
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase_connected = True
+except Exception:
+    supabase_connected = False
 
 # ==========================================
 # 1. 頁面與基本設定
 # ==========================================
-st.title("✨ 咒語魔法書 Prompt Guidebook")
-st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的AI指令提示詞。")
+st.title("✨ 咒語魔法書 2.0 Prompt Guidebook")
+st.caption("🚀 正式對外發布版 ｜ 支援全球 Google AI Studio BYOK (Bring Your Own Key) 零死角容錯")
+st.markdown("將模糊的自然語言，一鍵轉譯為高精準度、無雜訊、具備結構化防呆機制的 AI 頂級指令提示詞。")
 
 # ==========================================
-# 2. 側邊欄：全新【標準帳密登入系統】
+# 2. 側邊欄：法師身份認證 ＆ BYOK 設定
 # ==========================================
 with st.sidebar:
-    st.header("👤 法師身份認證 (SaaS 版)")
+    st.header("👤 法師身份認證")
     if supabase_connected:
         if 'user' not in st.session_state:
-            st.info("登入或註冊後，解鎖「魔法迴廊」自動備份功能！")
+            st.info("登入或註冊後，解鎖「魔法迴廊」自動雲端備份功能！")
             
             # 切換 登入 / 註冊 模式
             auth_mode = st.radio("選擇操作", ["🔓 登入", "📝 註冊新帳號"], horizontal=True)
@@ -47,14 +50,12 @@ with st.sidebar:
                     with st.spinner("連線至雲端金庫中..."):
                         try:
                             if auth_mode == "📝 註冊新帳號":
-                                # 執行註冊
                                 res = supabase.auth.sign_up({"email": email, "password": password})
                                 if res.user:
                                     st.session_state['user'] = res.user
                                     st.success("註冊並登入成功！魔法迴廊已開啟。")
                                     st.rerun()
                             else:
-                                # 執行登入
                                 res = supabase.auth.sign_in_with_password({"email": email, "password": password})
                                 if res.user:
                                     st.session_state['user'] = res.user
@@ -71,20 +72,20 @@ with st.sidebar:
         else:
             st.success(f"✅ 已登入法師：\n{st.session_state['user'].email}")
             if st.button("🚪 登出帳號", use_container_width=True):
-                if supabase_connected:
-                    try:
-                        supabase.auth.sign_out()
-                    except:
-                        pass
+                try:
+                    supabase.auth.sign_out()
+                except Exception:
+                    pass
                 del st.session_state['user']
                 st.rerun()
     else:
-        st.error("⚠️ 系統偵測不到 Supabase 金鑰，請確認是否已在 Streamlit Secrets 中設定！")
+        st.info("🌐 **純 BYOK 訪客模式**\n\n無需註冊即可直接詠唱！提示詞結果保存在當前會話中。")
 
     st.divider()
 
-    st.header("⚙️ 魔法書後端設定")
-    api_key = st.text_input("🔑 輸入你的魔力來源 (Google Gemini API Key)", type="password")
+    st.header("⚙️ 魔法書後端設定 (BYOK)")
+    raw_api_key = st.text_input("🔑 輸入你的魔力來源 (Google Gemini API Key)", type="password")
+    api_key = raw_api_key.strip() if raw_api_key else ""
     st.markdown("[👉 點我前往取得免費 API Key (Google AI Studio)](https://aistudio.google.com/app/apikey)")
     
     with st.expander("🦠 草履蟲指南：取得魔力來源"):
@@ -92,8 +93,8 @@ with st.sidebar:
         **只要 30 秒，超無腦 5 步驟：**
         1. 點擊上方的 **「👉 點我前往...」** 連結。
         2. 勾選同意條款，並用 Google 帳號登入。
-        3. 點擊藍色大按鈕 **「Get API key」** ➡️ **「Create API key」**。
-        4. 複製 `AIza...` 開頭的亂碼，貼回上方框框中！
+        3. 點擊藍色按鈕 **「Get API key」** ➡️ **「Create API key」**。
+        4. 複製 `AIza...` 開頭的字串，貼回上方框框中！
         """)
     
     st.divider()
@@ -102,15 +103,16 @@ with st.sidebar:
     MODEL_RADAR = {
         "Gemini 2.5 Flash 🥇 推薦：最新極速運算、邏輯編譯首選": "models/gemini-2.5-flash",
         "Gemini 3.5 Flash-Lite ⚡ 極速輕量版：最新超低延遲反應": "models/gemini-3.5-flash-lite",
-        "Gemini 2.0 Flash (經典穩定版)：高性價比、穩健輸出": "models/gemini-2.0-flash",
-        "Gemini Flash Latest (最新滾動版)：動態更新端點": "models/gemini-flash-latest"
+        "Gemini 2.0 Flash 🛡️ 經典穩定版：高性價比、穩健輸出": "models/gemini-2.0-flash",
+        "Gemini 1.5 Flash 🌐 廣泛相容版：最高相容性保證": "models/gemini-1.5-flash",
+        "Gemini 2.5 Pro 🧠 深度推理版：旗艦級高精準編譯": "models/gemini-2.5-pro"
     }
     
     model_choice_label = st.selectbox("選擇 AI 施法引擎", options=list(MODEL_RADAR.keys()), index=0)
     actual_model_name = MODEL_RADAR[model_choice_label]
 
 # ==========================================
-# 3. 核心大腦：Meta-Prompt (系統指令)
+# 3. 核心大腦：Meta-Prompt ＆ 容錯架構
 # ==========================================
 META_PROMPT = """
 # Role & Persona
@@ -146,34 +148,69 @@ META_PROMPT = """
 }
 """
 
-DEFAULT_FALLBACK_MODEL = "models/gemini-2.5-flash"
+CASCADE_FALLBACK_CHAIN = [
+    "models/gemini-2.5-flash",
+    "models/gemini-1.5-flash",
+    "models/gemini-2.0-flash"
+]
 
-def generate_with_fallback(primary_model_name, prompt, system_instruction=None, generation_config=None):
+def call_gemini_with_cascade(primary_model_name, prompt, system_instruction=None, generation_config=None):
     """
-    嘗試使用指定模型生成內容。若遇到 404 / 模型下線錯誤，自動 fallback 至預設穩定模型。
+    嘗試使用指定模型生成內容。若遇到 404 / NotFound / 停用錯誤，自動依序使用 CASCADE_FALLBACK_CHAIN 重試。
     回傳: (response_text, used_model_name, fallback_triggered)
     """
-    try:
-        model = genai.GenerativeModel(
-            model_name=primary_model_name,
-            system_instruction=system_instruction,
-            generation_config=generation_config
-        )
-        response = model.generate_content(prompt)
-        return response.text, primary_model_name, False
-    except Exception as e:
-        err_lower = str(e).lower()
-        # 若是 404、模型退役或不存在，且原先不是 fallback 模型，則自動切換重試
-        if ("404" in err_lower or "not found" in err_lower or "no longer available" in err_lower) and primary_model_name != DEFAULT_FALLBACK_MODEL:
-            fallback_model = genai.GenerativeModel(
-                model_name=DEFAULT_FALLBACK_MODEL,
+    models_to_try = [primary_model_name]
+    for m in CASCADE_FALLBACK_CHAIN:
+        if m not in models_to_try:
+            models_to_try.append(m)
+
+    last_err = None
+    for idx, model_name in enumerate(models_to_try):
+        try:
+            model = genai.GenerativeModel(
+                model_name=model_name,
                 system_instruction=system_instruction,
                 generation_config=generation_config
             )
-            response = fallback_model.generate_content(prompt)
-            return response.text, DEFAULT_FALLBACK_MODEL, True
-        raise e
+            response = model.generate_content(prompt)
+            return response.text, model_name, (idx > 0)
+        except Exception as e:
+            last_err = e
+            err_lower = str(e).lower()
+            # 判斷是否為 404、模型退役、未找到或端點不支援
+            if any(k in err_lower for k in ["404", "not found", "no longer available", "not_found", "unsupported", "deprecated"]):
+                continue
+            else:
+                # 認證錯誤 (400/403) 或 配額超標 (429) 直接拋出
+                raise e
 
+    raise last_err
+
+def clean_and_parse_json(raw_text):
+    """
+    穩健型 JSON 解析器，防禦 Markdown 標籤、跳脫控制字元與尾隨逗號
+    """
+    text = raw_text.strip()
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+
+    start_idx, end_idx = text.find('{'), text.rfind('}')
+    if start_idx != -1 and end_idx != -1:
+        clean_json_str = text[start_idx:end_idx+1]
+    else:
+        raise ValueError("JSON_FORMAT_ERROR")
+
+    try:
+        return json.loads(clean_json_str)
+    except json.JSONDecodeError:
+        # 修復常見尾隨逗號錯誤
+        repaired = re.sub(r',\s*([}\]])', r'\1', clean_json_str)
+        return json.loads(repaired)
 
 # ==========================================
 # 4. 主畫面：💡 快速靈感庫 (懶人無腦版)
@@ -227,8 +264,8 @@ visual_choice = st.radio(
 # ==========================================
 if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
     if not api_key:
-        st.error("請先在左側邊欄輸入 API Key（注入魔力）！")
-    elif not original_prompt:
+        st.error("🔑 請先在左側邊欄輸入 Google Gemini API Key（注入魔力）！")
+    elif not original_prompt.strip():
         st.warning("請輸入你的原始指令！")
     else:
         if 'execution_result' in st.session_state:
@@ -236,32 +273,25 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
             
         combined_prompt = f"【使用者原始需求】\n{original_prompt}\n\n【使用者期望的視覺呈現】\n{visual_choice}"
             
-        display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].split('⚡')[0].strip()
+        display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].split('⚡')[0].split('🛡️')[0].split('🌐')[0].split('🧠')[0].strip()
         with st.spinner(f"魔法書正在詠唱轉譯中（使用引擎：{display_engine_name}），請稍候..."):
             try:
                 genai.configure(api_key=api_key)
                 generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
                 
-                raw_text, used_model, fell_back = generate_with_fallback(
+                raw_text, used_model, fell_back = call_gemini_with_cascade(
                     primary_model_name=actual_model_name,
                     prompt=combined_prompt,
                     system_instruction=META_PROMPT,
                     generation_config=generation_config
                 )
                 if fell_back:
-                    st.toast("⚠️ 原選定模型已停止服務，已自動切換至 Gemini 2.5 Flash 完成詠唱！", icon="🪄")
-                
-                raw_text = raw_text.strip()
-                start_idx, end_idx = raw_text.find('{'), raw_text.rfind('}')
-                if start_idx != -1 and end_idx != -1:
-                    clean_json_str = raw_text[start_idx:end_idx+1]
-                else:
-                    raise ValueError("JSON_ERROR")
+                    st.toast(f"🪄 原選定模型已自動安全切換至 {used_model} 完成詠唱！", icon="🛡️")
 
-                compiled_json = json.loads(clean_json_str)
+                compiled_json = clean_and_parse_json(raw_text)
                 st.session_state['compiled_result'] = compiled_json
                 
-                # 🛡️ SaaS 資料庫儲存機制
+                # 🛡️ SaaS 資料庫儲存機制（若有 Supabase 連線）
                 if supabase_connected and 'user' in st.session_state:
                     try:
                         db_payload = {
@@ -276,11 +306,16 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
                 st.balloons()
             except Exception as e:
                 error_msg = str(e).lower()
-                if "quota" in error_msg: st.error("🛑 當日魔力額度已用盡！")
-                elif "api_key" in error_msg or "400" in error_msg: st.error("🔑 API Key 無效！")
-                elif "json_error" in error_msg: st.error("🧩 模型迴路異常，請重試。")
-                elif "404" in error_msg or "no longer available" in error_msg: st.error("📡 所選模型版本已下線或無效，請切換至 Gemini 2.5 Flash 或最新版本！")
-                else: st.error(f"⚠️ 發生未知錯誤：{str(e)}")
+                if "quota" in error_msg or "429" in error_msg or "resourceexhausted" in error_msg:
+                    st.error("🛑 你的 Google API Key 免費額度已達上限（429 Too Many Requests），請稍候再試或更換 Key！")
+                elif "api_key" in error_msg or "400" in error_msg or "invalid" in error_msg:
+                    st.error("🔑 Google Gemini API Key 無效，請檢查左側輸入的 Key（開頭應為 AIza...）！")
+                elif "json" in error_msg:
+                    st.error("🧩 模型輸出格式解析異常，請再次點擊「詠唱」重試！")
+                elif "404" in error_msg or "no longer available" in error_msg:
+                    st.error("📡 所有模型端點皆暫時無法連線，請稍後再試！")
+                else:
+                    st.error(f"⚠️ 詠唱過程發生異常：{str(e)}")
 
 # ==========================================
 # 7. UI 頁籤渲染
@@ -294,46 +329,75 @@ if 'compiled_result' in st.session_state or ('user' in st.session_state):
         with tabs[0]:
             st.markdown("### 結構化拆解")
             opt_data = result_data.get("optimized_prompt", {})
-            for key, value in opt_data.items():
-                if value and value != "null":
-                    st.markdown(f"**【{key}】**\n> {value}")
+            if isinstance(opt_data, dict):
+                for key, value in opt_data.items():
+                    if value and value != "null":
+                        if isinstance(value, list):
+                            items_str = "\n> ".join([f"- {item}" for item in value])
+                            st.markdown(f"**【{key}】**\n> {items_str}")
+                        elif isinstance(value, dict):
+                            items_str = "\n> ".join([f"- **{k}**: {v}" for k, v in value.items()])
+                            st.markdown(f"**【{key}】**\n> {items_str}")
+                        else:
+                            st.markdown(f"**【{key}】**\n> {value}")
 
         with tabs[1]:
             st.markdown("### 天使與惡魔的指導")
-            for i, diag in enumerate(result_data.get("diagnostics", []), 1):
-                with st.expander(f"診斷重點 {i}", expanded=True):
-                    st.markdown(f"**{diag.get('roast', '')}**")
-                    st.markdown(f"*{diag.get('guide', '')}*")
+            diagnostics = result_data.get("diagnostics", [])
+            if isinstance(diagnostics, list):
+                for i, diag in enumerate(diagnostics, 1):
+                    with st.expander(f"診斷重點 {i}", expanded=True):
+                        if isinstance(diag, dict):
+                            st.markdown(f"**{diag.get('roast', '')}**")
+                            st.markdown(f"*{diag.get('guide', '')}*")
+                        else:
+                            st.markdown(f"**{str(diag)}**")
 
         with tabs[2]:
-            score = result_data.get("scorecard", {}).get("score", 0)
-            st.metric(label="原指令戰鬥力", value=f"{score} / 100")
-            st.progress(score / 100)
+            raw_score = result_data.get("scorecard", {}).get("score", 60)
+            try:
+                score = int(raw_score)
+            except (ValueError, TypeError):
+                score = 60
+            clamped_score = max(0, min(100, score))
+            st.metric(label="原指令戰鬥力", value=f"{clamped_score} / 100")
+            st.progress(clamped_score / 100)
             st.info(result_data.get("scorecard", {}).get("evaluation", ""))
 
         with tabs[3]:
             st.write(result_data.get("summary", ""))
 
         with tabs[4]:
-            st.code(result_data.get("markdown_export", ""), language="markdown")
+            export_content = result_data.get("markdown_export", "")
+            st.code(export_content, language="markdown")
+            st.download_button(
+                label="📥 一鍵下載 Markdown 提示詞檔 (.md)",
+                data=export_content,
+                file_name="prompt_guidebook_optimized.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
 
         with tabs[5]:
             st.markdown("### 🏃 即刻驗證召喚效果")
             if st.button("🚀 立即執行究極咒語", type="secondary"):
-                with st.spinner("AI 正在召喚，請稍候..."):
-                    try:
-                        final_prompt = result_data.get("markdown_export", "")
-                        execute_prompt = final_prompt + "\n\n【防呆】：直接輸出 Markdown 與 ```mermaid 程式碼，絕對不要包裝在 JSON 裡！"
-                        genai.configure(api_key=api_key)
-                        exec_text, used_exec_model, exec_fell_back = generate_with_fallback(
-                            primary_model_name=actual_model_name,
-                            prompt=execute_prompt
-                        )
-                        if exec_fell_back:
-                            st.toast("⚠️ 原選定模型已停止服務，召喚已自動切換至 Gemini 2.5 Flash 執行！", icon="🪄")
-                        st.session_state['execution_result'] = exec_text
-                    except Exception as ex:
-                        st.error(f"召喚失敗：{str(ex)}")
+                if not api_key:
+                    st.error("🔑 請先在左側邊欄輸入 Google Gemini API Key！")
+                else:
+                    with st.spinner("AI 正在召喚，請稍候..."):
+                        try:
+                            final_prompt = result_data.get("markdown_export", "")
+                            execute_prompt = final_prompt + "\n\n【防呆】：直接輸出 Markdown 與 ```mermaid 程式碼，絕對不要包裝在 JSON 裡！"
+                            genai.configure(api_key=api_key)
+                            exec_text, used_exec_model, exec_fell_back = call_gemini_with_cascade(
+                                primary_model_name=actual_model_name,
+                                prompt=execute_prompt
+                            )
+                            if exec_fell_back:
+                                st.toast(f"🪄 原選定模型已自動安全切換至 {used_exec_model} 執行！", icon="🛡️")
+                            st.session_state['execution_result'] = exec_text
+                        except Exception as ex:
+                            st.error(f"召喚失敗：{str(ex)}")
 
             if 'execution_result' in st.session_state:
                 st.divider()
@@ -348,7 +412,7 @@ if 'compiled_result' in st.session_state or ('user' in st.session_state):
         st.caption("雲端金庫內建 2 天自動銷毀機制。")
         
         if not supabase_connected:
-            st.warning("系統未連線至資料庫，無法讀取紀錄。")
+            st.info("ℹ️ 目前處於純 BYOK 訪客模式，歷史紀錄未連結至雲端資料庫。")
         elif 'user' not in st.session_state:
             st.info("👈 請先於左側面板註冊或登入，解鎖個人專屬歷史紀錄！")
         else:
