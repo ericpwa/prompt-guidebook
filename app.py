@@ -101,8 +101,8 @@ with st.sidebar:
     
     MODEL_RADAR = {
         "Gemini 2.5 Flash 🥇 推薦：最新極速運算、邏輯編譯首選": "models/gemini-2.5-flash",
+        "Gemini 3.5 Flash-Lite ⚡ 極速輕量版：最新超低延遲反應": "models/gemini-3.5-flash-lite",
         "Gemini 2.0 Flash (經典穩定版)：高性價比、穩健輸出": "models/gemini-2.0-flash",
-        "Gemini 2.0 Flash-Lite (極速版)：最低延遲反應": "models/gemini-2.0-flash-lite",
         "Gemini Flash Latest (最新滾動版)：動態更新端點": "models/gemini-flash-latest"
     }
     
@@ -145,6 +145,35 @@ META_PROMPT = """
   "markdown_export": "..."
 }
 """
+
+DEFAULT_FALLBACK_MODEL = "models/gemini-2.5-flash"
+
+def generate_with_fallback(primary_model_name, prompt, system_instruction=None, generation_config=None):
+    """
+    嘗試使用指定模型生成內容。若遇到 404 / 模型下線錯誤，自動 fallback 至預設穩定模型。
+    回傳: (response_text, used_model_name, fallback_triggered)
+    """
+    try:
+        model = genai.GenerativeModel(
+            model_name=primary_model_name,
+            system_instruction=system_instruction,
+            generation_config=generation_config
+        )
+        response = model.generate_content(prompt)
+        return response.text, primary_model_name, False
+    except Exception as e:
+        err_lower = str(e).lower()
+        # 若是 404、模型退役或不存在，且原先不是 fallback 模型，則自動切換重試
+        if ("404" in err_lower or "not found" in err_lower or "no longer available" in err_lower) and primary_model_name != DEFAULT_FALLBACK_MODEL:
+            fallback_model = genai.GenerativeModel(
+                model_name=DEFAULT_FALLBACK_MODEL,
+                system_instruction=system_instruction,
+                generation_config=generation_config
+            )
+            response = fallback_model.generate_content(prompt)
+            return response.text, DEFAULT_FALLBACK_MODEL, True
+        raise e
+
 
 # ==========================================
 # 4. 主畫面：💡 快速靈感庫 (懶人無腦版)
@@ -207,16 +236,22 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
             
         combined_prompt = f"【使用者原始需求】\n{original_prompt}\n\n【使用者期望的視覺呈現】\n{visual_choice}"
             
-        display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].strip()
+        display_engine_name = model_choice_label.split('🥇')[0].split('(')[0].split('⚡')[0].strip()
         with st.spinner(f"魔法書正在詠唱轉譯中（使用引擎：{display_engine_name}），請稍候..."):
             try:
                 genai.configure(api_key=api_key)
                 generation_config = genai.types.GenerationConfig(response_mime_type="application/json")
-                model = genai.GenerativeModel(model_name=actual_model_name, system_instruction=META_PROMPT, generation_config=generation_config)
                 
-                response = model.generate_content(combined_prompt)
+                raw_text, used_model, fell_back = generate_with_fallback(
+                    primary_model_name=actual_model_name,
+                    prompt=combined_prompt,
+                    system_instruction=META_PROMPT,
+                    generation_config=generation_config
+                )
+                if fell_back:
+                    st.toast("⚠️ 原選定模型已停止服務，已自動切換至 Gemini 2.5 Flash 完成詠唱！", icon="🪄")
                 
-                raw_text = response.text.strip()
+                raw_text = raw_text.strip()
                 start_idx, end_idx = raw_text.find('{'), raw_text.rfind('}')
                 if start_idx != -1 and end_idx != -1:
                     clean_json_str = raw_text[start_idx:end_idx+1]
@@ -244,6 +279,7 @@ if st.button("✨ 詠唱！一鍵編譯與優化", type="primary"):
                 if "quota" in error_msg: st.error("🛑 當日魔力額度已用盡！")
                 elif "api_key" in error_msg or "400" in error_msg: st.error("🔑 API Key 無效！")
                 elif "json_error" in error_msg: st.error("🧩 模型迴路異常，請重試。")
+                elif "404" in error_msg or "no longer available" in error_msg: st.error("📡 所選模型版本已下線或無效，請切換至 Gemini 2.5 Flash 或最新版本！")
                 else: st.error(f"⚠️ 發生未知錯誤：{str(e)}")
 
 # ==========================================
@@ -289,9 +325,13 @@ if 'compiled_result' in st.session_state or ('user' in st.session_state):
                         final_prompt = result_data.get("markdown_export", "")
                         execute_prompt = final_prompt + "\n\n【防呆】：直接輸出 Markdown 與 ```mermaid 程式碼，絕對不要包裝在 JSON 裡！"
                         genai.configure(api_key=api_key)
-                        execution_model = genai.GenerativeModel(model_name=actual_model_name)
-                        exec_response = execution_model.generate_content(execute_prompt)
-                        st.session_state['execution_result'] = exec_response.text
+                        exec_text, used_exec_model, exec_fell_back = generate_with_fallback(
+                            primary_model_name=actual_model_name,
+                            prompt=execute_prompt
+                        )
+                        if exec_fell_back:
+                            st.toast("⚠️ 原選定模型已停止服務，召喚已自動切換至 Gemini 2.5 Flash 執行！", icon="🪄")
+                        st.session_state['execution_result'] = exec_text
                     except Exception as ex:
                         st.error(f"召喚失敗：{str(ex)}")
 
